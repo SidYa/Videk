@@ -1,0 +1,24 @@
+# Rust
+/src-tauri/target/
+**/*.rs.bk
+
+# libmpv (downloaded by scripts/fetch-libmpv.ps1)
+/vendor/
+
+# Node / Vite
+node_modules/
+/ui/dist/
+.vite/
+*.local
+
+# Tauri generated
+/src-tauri/gen/schemas/
+
+# Editors / OS
+.vscode/*
+.idea/
+Thumbs.db
+Desktop.ini
+
+*.log
+.claude

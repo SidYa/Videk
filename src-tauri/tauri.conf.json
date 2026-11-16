@@ -1,0 +1,73 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Videk",
+  "version": "0.1.0",
+  "identifier": "ua.sergii.videk",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1430",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Videk",
+        "width": 1024,
+        "height": 612,
+        "minWidth": 420,
+        "minHeight": 240,
+        "center": true,
+        "decorations": false,
+        "backgroundColor": "#00000000",
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "Sergii Sidko",
+    "copyright": "© 2026 Sergii Sidko",
+    "license": "GPL-3.0-only",
+    "resources": {
+      "../vendor/mpv/libmpv-2.dll": "libmpv-2.dll"
+    },
+    "shortDescription": "Videk video player",
+    "longDescription": "A fast, minimal video player for Windows built on libmpv.",
+    "fileAssociations": [
+      {
+        "ext": ["mkv", "mk3d", "mp4", "m4v", "mov", "avi", "webm", "flv", "wmv", "asf", "mpg", "mpeg", "m2v", "ts", "m2ts", "mts", "vob", "3gp", "3g2", "ogv", "bik", "bk2", "rm", "rmvb", "divx", "f4v"],
+        "name": "Videk.Video",
+        "description": "Video file",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["mp3", "flac", "wav", "m4a", "aac", "ogg", "oga", "opus", "wma", "ape", "wv", "mka", "ac3", "dts", "alac", "aiff", "aif"],
+        "name": "Videk.Audio",
+        "description": "Audio file",
+        "role": "Viewer"
+      }
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "compression": "lzma",
+        "languages": ["Ukrainian", "English"],
+        "displayLanguageSelector": false,
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    }
+  }
+}

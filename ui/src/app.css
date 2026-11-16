@@ -1,0 +1,112 @@
+/* Design tokens (after Farba). The page itself is transparent: the video is a native window
+   under the WebView, only the UI parts paint. `data-theme` on <html> is set before first
+   paint by /theme-boot.js and kept in sync by lib/prefs.svelte.ts; the accent variables are
+   set there too. */
+
+:root {
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, monospace;
+  --font-size: 12px;
+  --header-h: 36px;
+  --radius: 6px;
+  --close-hover: #c42b1c;
+  --close-hover-fg: #ffffff;
+  /* Over the video (black): always light text. */
+  --on-video: #f2f2f2;
+  --on-video-dim: rgba(242, 242, 242, 0.6);
+  --osd-bg: rgba(20, 20, 20, 0.78);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-header: #1f1f1f;
+  --bg-panel: #2b2b2b;
+  --bg-input: #1d1d1d;
+  --bg-popup: #2f2f2f;
+  --border: #141414;
+  --border-soft: #3e3e3e;
+  --fg: #e2e2e2;
+  --fg-dim: #9b9b9b;
+  --fg-faint: #6a6a6a;
+  --hover: rgba(255, 255, 255, 0.08);
+  --pressed: rgba(255, 255, 255, 0.14);
+  --track: rgba(255, 255, 255, 0.16);
+  --track-cache: rgba(255, 255, 255, 0.3);
+  --accent: #4b9be8;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(75, 155, 232, 0.28);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --backdrop: rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-header: #e9e9e9;
+  --bg-panel: #f6f6f6;
+  --bg-input: #ffffff;
+  --bg-popup: #ffffff;
+  --border: #bdbdbd;
+  --border-soft: #d6d6d6;
+  --fg: #1f1f1f;
+  --fg-dim: #5c5c5c;
+  --fg-faint: #9a9a9a;
+  --hover: rgba(0, 0, 0, 0.07);
+  --pressed: rgba(0, 0, 0, 0.13);
+  --track: rgba(0, 0, 0, 0.14);
+  --track-cache: rgba(0, 0, 0, 0.26);
+  --accent: #1f6fd1;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(31, 111, 209, 0.2);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+  --backdrop: rgba(0, 0, 0, 0.3);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--fg);
+  font: var(--font-size) / 1.35 var(--font);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+select,
+label:has(> input[type="checkbox"]),
+input[type="checkbox"],
+input[type="color"],
+input[type="range"],
+[role="button"],
+[role="menuitem"],
+[role="menuitemcheckbox"],
+[role="menuitemradio"] {
+  cursor: pointer;
+}
+:disabled,
+[aria-disabled="true"] {
+  cursor: default;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
