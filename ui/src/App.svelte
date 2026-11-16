@@ -2,28 +2,24 @@
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import Header from "./components/Header.svelte";
   import MenuList, { type MenuItem } from "./components/MenuList.svelte";
   import SettingsDialog from "./components/SettingsDialog.svelte";
   import Icon from "./components/Icon.svelte";
-  import { player, trackLabel, SPEEDS, VIDEO_EXT, AUDIO_EXT, SUB_EXT } from "./lib/player.svelte";
+  import { player, trackLabel, SPEEDS } from "./lib/player.svelte";
   import { prefs } from "./lib/prefs.svelte";
   import { win, appWindow } from "./lib/win.svelte";
   import { osd } from "./lib/osd.svelte";
-  import { baseName, ext, fmtTime } from "./lib/format";
+  import { baseName, fmtTime } from "./lib/format";
   import { startRegion } from "./lib/region";
 
   const HEADER_H = 36;
 
   let menu = $state<{ x: number; y: number } | null>(null);
   let settingsOpen = $state(false);
-  let dropping = $state(false);
   let cursorHidden = $state(false);
   let cursorTimer = 0;
   let hideHeaderTimer = 0;
-  let needFit = false;
 
   const title = $derived(player.title || (player.path ? baseName(player.path) : ""));
 
@@ -36,83 +32,28 @@
     return () => untrack(() => win.holds--);
   });
 
-  // ---- files ------------------------------------------------------------------------
-
-  async function openFiles() {
-    const r = await openDialog({
-      multiple: true,
-      title: "Відкрити",
-      filters: [
-        { name: "Медіафайли", extensions: [...VIDEO_EXT, ...AUDIO_EXT] },
-        { name: "Відео", extensions: VIDEO_EXT },
-        { name: "Аудіо", extensions: AUDIO_EXT },
-        { name: "Усі файли", extensions: ["*"] },
-      ],
-    });
-    if (r && r.length) player.open(r);
-  }
-
-  async function openSubtitles() {
-    const r = await openDialog({
-      multiple: true,
-      title: "Субтитри",
-      filters: [{ name: "Субтитри", extensions: SUB_EXT }, { name: "Усі файли", extensions: ["*"] }],
-    });
-    for (const p of r ?? []) player.addSubtitle(p);
-  }
-
-  function handlePaths(paths: string[]) {
-    if (!paths.length) return;
-    if (!player.idle && paths.every((p) => SUB_EXT.includes(ext(p)))) {
-      for (const p of paths) player.addSubtitle(p);
-    } else {
-      player.open(paths);
-    }
-  }
-
   // ---- startup ----------------------------------------------------------------------
+  // Settings, files from the command line, drops and the open dialogs are handled in Rust
+  // (src-tauri/src/settings.rs, media.rs); the UI shows the state and the messages.
+
+  const openFiles = () => player.openDialog();
+  const openSubtitles = () => player.subtitlesDialog();
 
   onMount(() => {
     const unlisten: (() => void)[] = [];
     (async () => {
+      await prefs.init();
       await player.init();
       await win.init();
-      player.applyPrefs();
-      player.set("volume", prefs.volume);
 
       unlisten.push(
-        await listen<string[]>("open-files", (e) => handlePaths(e.payload)),
         await listen<{ kind: string; x: number; y: number; delta: number }>("video-mouse", (e) =>
           videoMouse(e.payload),
         ),
-        await listen<{ event: string; reason: number | null; error: number | null }>("mpv-event", async (e) => {
-          const ev = e.payload;
-          if (ev.event === "start-file") needFit = true;
-          if (ev.event === "video-reconfig" && needFit) {
-            const w = await player.get<number>("dwidth");
-            const h = await player.get<number>("dheight");
-            if (w && h) {
-              needFit = false;
-              if (prefs.autofit) win.fitTo(w, h);
-            }
-          }
-          if (ev.event === "file-loaded") osd.show(title || "", 1500);
-          // MPV_END_FILE_REASON_ERROR
-          if (ev.event === "end-file" && ev.reason === 4) osd.show("Не вдалося відкрити файл", 2500);
-        }),
-        await getCurrentWebview().onDragDropEvent((e) => {
-          const t = e.payload.type;
-          if (t === "enter" || t === "over") dropping = true;
-          else if (t === "leave") dropping = false;
-          else if (t === "drop") {
-            dropping = false;
-            handlePaths(e.payload.paths);
-          }
-        }),
+        await listen<string>("osd", (e) => e.payload && osd.show(e.payload, 1800)),
       );
 
       startRegion();
-      handlePaths(await invoke<string[]>("take_pending_files"));
       await appWindow.show();
       await appWindow.setFocus();
     })();
@@ -346,7 +287,7 @@
 
 <!-- The video area. Only the `data-ui` parts are drawn by the WebView (lib/region.ts); the
      mouse over the rest reaches the video window and comes back as `video-mouse`. -->
-<div class="stage" class:full={win.fullscreen} class:drop={dropping}>
+<div class="stage" class:full={win.fullscreen}>
   {#if player.idle}
     <div class="center idle">
       <img src="/logo.svg" alt="" width="72" height="72" data-ui />
@@ -402,14 +343,6 @@
   }
   .stage.full {
     inset: 0;
-  }
-  .stage.drop::after {
-    content: "";
-    position: absolute;
-    inset: 6px;
-    border: 2px dashed var(--accent);
-    border-radius: 10px;
-    pointer-events: none;
   }
   .center {
     position: absolute;

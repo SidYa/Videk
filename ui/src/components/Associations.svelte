@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { VIDEO_EXT, AUDIO_EXT } from "../lib/player.svelte";
   import { osd } from "../lib/osd.svelte";
 
   interface Status {
@@ -9,6 +8,9 @@
     exe: string | null;
   }
 
+  /** The formats Videk knows (Rust: media.rs). */
+  let VIDEO_EXT = $state<string[]>([]);
+  let AUDIO_EXT = $state<string[]>([]);
   let selected = $state(new Set<string>());
   let registered = $state(new Set<string>());
   let busy = $state(false);
@@ -20,6 +22,9 @@
 
   onMount(async () => {
     try {
+      const f = await invoke<{ video: string[]; audio: string[] }>("media_formats");
+      VIDEO_EXT = f.video;
+      AUDIO_EXT = f.audio;
       const s = await invoke<Status>("assoc_status");
       registered = new Set(s.registered);
       selected = new Set(s.registered.length ? s.registered : [...VIDEO_EXT, ...AUDIO_EXT]);
@@ -49,11 +54,7 @@
     error = "";
     try {
       const s = await invoke<Status>("assoc_apply", {
-        selection: {
-          video: VIDEO_EXT.filter((e) => selected.has(e)),
-          audio: AUDIO_EXT.filter((e) => selected.has(e)),
-          all: [...VIDEO_EXT, ...AUDIO_EXT],
-        },
+        selected: [...selected],
       });
       registered = new Set(s.registered);
       osd.show(`Асоціації збережено: ${s.registered.length}`);

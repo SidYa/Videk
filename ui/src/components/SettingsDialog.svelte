@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import Associations from "./Associations.svelte";
-  import { prefs, ACCENT_ROWS, ACCENTS, accentName, type ThemeMode, type Accent } from "../lib/prefs.svelte";
+  import { prefs, ACCENT_ROWS, accentName, type ThemeMode, type Accent } from "../lib/prefs.svelte";
   import { player } from "../lib/player.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -22,13 +22,13 @@
     ["clickPause", "Пауза клацанням по відео", "Одинарний клік ЛКМ ставить на паузу."],
   ];
 
+  /** Swatch colour on the current theme (Rust: accent.rs). */
   function swatch(a: Accent): string {
-    return a === "custom" ? prefs.customAccent : ACCENTS[a][prefs.dark ? 0 : 1];
+    return a === "custom" ? prefs.customAccent : (prefs.palette[a] ?? "transparent");
   }
 
   function toggle(key: Toggle) {
-    prefs.set(key, !prefs[key]);
-    if (key === "hwdec" || key === "resume" || key === "folderPlaylist") player.applyPrefs();
+    prefs.set({ [key]: !prefs[key] });
   }
 </script>
 
@@ -56,7 +56,7 @@
           <span class="name">Тема</span>
           <div class="seg">
             {#each THEMES as [t, label] (t)}
-              <button class:on={prefs.theme === t} onclick={() => prefs.setTheme(t)}>{label}</button>
+              <button class:on={prefs.theme === t} onclick={() => prefs.set({ theme: t })}>{label}</button>
             {/each}
           </div>
         </div>
@@ -73,7 +73,7 @@
                     style:--c={swatch(a)}
                     title={accentName(a)}
                     aria-label={accentName(a)}
-                    onclick={() => (a === "custom" ? colorInput.click() : prefs.setAccent(a))}
+                    onclick={() => (a === "custom" ? colorInput.click() : prefs.set({ accent: a }))}
                   ></button>
                 {/each}
               </div>
@@ -83,7 +83,7 @@
               type="color"
               class="hidden-color"
               value={prefs.customAccent}
-              oninput={(e) => prefs.setCustomAccent((e.currentTarget as HTMLInputElement).value)}
+              oninput={(e) => prefs.set({ customAccent: (e.currentTarget as HTMLInputElement).value, accent: "custom" })}
             />
           </div>
         </div>

@@ -8,21 +8,14 @@
 //! - declare the capabilities (RegisteredApplications), so Videk is listed in Settings >
 //!   Default apps, where `open_default_apps` takes the user to confirm it.
 
-use serde::{Deserialize, Serialize};
+use crate::media::{AUDIO, VIDEO};
+use serde::Serialize;
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
 
 const APP: &str = "Videk";
 const CAPS: &str = r"Software\Videk\Capabilities";
 const CLASSES: &str = r"Software\Classes";
-
-#[derive(Deserialize)]
-pub struct Selection {
-    pub video: Vec<String>,
-    pub audio: Vec<String>,
-    /// Every extension Videk knows: the ones not selected are unregistered.
-    pub all: Vec<String>,
-}
 
 #[derive(Serialize)]
 pub struct Status {
@@ -75,7 +68,9 @@ pub fn status() -> Status {
     Status { registered, exe }
 }
 
-pub fn apply(sel: &Selection) -> Result<Status, String> {
+/// Registers Videk for the `selected` extensions (of media::VIDEO / media::AUDIO) and
+/// unregisters it for the others.
+pub fn apply(selected: &[String]) -> Result<Status, String> {
     let exe = exe()?;
     let run = || -> std::io::Result<()> {
         let root = hkcu();
@@ -100,14 +95,13 @@ pub fn apply(sel: &Selection) -> Result<Status, String> {
         let (reg_apps, _) = root.create_subkey(r"Software\RegisteredApplications")?;
         reg_apps.set_value(APP, &CAPS)?;
 
-        let selected = |e: &String| sel.video.contains(e) || sel.audio.contains(e);
-        for e in &sel.all {
+        let known = VIDEO.iter().map(|e| (*e, "Video")).chain(AUDIO.iter().map(|e| (*e, "Audio")));
+        for (e, kind) in known {
             let ext = format!(".{e}");
             let (ext_key, _) = root.create_subkey(format!(r"{CLASSES}\{ext}"))?;
-            let kind = if sel.audio.contains(e) { "Audio" } else { "Video" };
             let id = prog_id(kind);
             let current: String = ext_key.get_value("").unwrap_or_default();
-            if selected(e) {
+            if selected.iter().any(|s| s.eq_ignore_ascii_case(e)) {
                 let (owp, _) = ext_key.create_subkey("OpenWithProgids")?;
                 owp.set_value(&id, &"")?;
                 fa.set_value(&ext, &id)?;

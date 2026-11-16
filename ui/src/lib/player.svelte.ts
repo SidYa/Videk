@@ -2,7 +2,6 @@
 // the commands the UI sends.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { prefs } from "./prefs.svelte";
 import { osd } from "./osd.svelte";
 
 export interface Track {
@@ -27,16 +26,6 @@ export interface Chapter {
 }
 
 export const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
-
-export const VIDEO_EXT = [
-  "mkv", "mk3d", "mp4", "m4v", "mov", "avi", "webm", "flv", "f4v", "wmv", "asf", "mpg", "mpeg",
-  "m2v", "ts", "m2ts", "mts", "vob", "3gp", "3g2", "ogv", "bik", "bk2", "rm", "rmvb", "divx",
-];
-export const AUDIO_EXT = [
-  "mp3", "flac", "wav", "m4a", "aac", "ogg", "oga", "opus", "wma", "ape", "wv", "mka", "ac3",
-  "dts", "alac", "aiff", "aif",
-];
-export const SUB_EXT = ["srt", "ass", "ssa", "vtt", "sub", "idx", "sup", "smi"];
 
 const num = (v: unknown, d = 0) => (typeof v === "number" && isFinite(v) ? v : d);
 
@@ -116,25 +105,12 @@ class Player {
     return invoke<T>("mpv_get", { name }).catch(() => null);
   }
 
-  /** Applies the settings that live in mpv. */
-  applyPrefs() {
-    this.set("hwdec", prefs.hwdec ? "auto-safe" : "no");
-    this.set("save-position-on-quit", prefs.resume);
-    this.set("resume-playback", prefs.resume);
-    this.set("autocreate-playlist", prefs.folderPlaylist ? "filter" : "no");
+  /** The open dialogs and the file handling are in Rust (src-tauri/src/media.rs). */
+  openDialog() {
+    invoke("open_dialog").catch((e) => console.warn(e));
   }
-
-  open(paths: string[]) {
-    paths.forEach((p, i) => {
-      if (i === 0 && this.idle === false && prefs.resume) this.command("write-watch-later-config");
-      this.command("loadfile", p, i === 0 ? "replace" : "append");
-    });
-    if (paths.length) this.set("pause", false);
-  }
-
-  addSubtitle(path: string) {
-    this.command("sub-add", path, "select");
-    osd.show("Субтитри додано");
+  subtitlesDialog() {
+    invoke("subtitles_dialog").catch((e) => console.warn(e));
   }
 
   togglePause() {
@@ -148,8 +124,7 @@ class Player {
   }
 
   stop() {
-    if (prefs.resume) this.command("write-watch-later-config");
-    this.command("stop");
+    invoke("player_stop").catch((e) => console.warn(e));
   }
 
   seek(t: number, exact = true) {
@@ -166,7 +141,6 @@ class Player {
     const vol = Math.round(Math.min(150, Math.max(0, v)));
     this.set("volume", vol);
     if (this.mute && vol > 0) this.set("mute", false);
-    prefs.set("volume", vol);
     osd.show(`Гучність ${vol}%`);
   }
 
@@ -201,10 +175,10 @@ class Player {
   }
 
   next() {
-    this.command("playlist-next");
+    invoke("playlist_step", { forward: true }).catch((e) => console.warn(e));
   }
   prev() {
-    this.command("playlist-prev");
+    invoke("playlist_step", { forward: false }).catch((e) => console.warn(e));
   }
 }
 

@@ -1,24 +1,29 @@
 //! Videk: a minimal video player. libmpv decodes and renders into a native child window
 //! (host.rs) under a transparent WebView2 that draws the whole UI (title bar with the
 //! controls, menus, settings). The UI talks to mpv through the commands below and gets the
-//! observed mpv properties as `mpv-prop` events.
+//! observed mpv properties as `mpv-prop` events. Settings (settings.rs), opening files
+//! (media.rs) and the accent colours (accent.rs) are handled here too: the UI only shows.
 
+mod accent;
 #[cfg(windows)]
 mod assoc;
 #[cfg(windows)]
 mod drop;
 mod host;
+mod media;
 mod mpv;
+mod settings;
 
 use mpv::Mpv;
 use serde::Serialize;
 use serde_json::Value;
+use settings::Store;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent};
+use tauri::{AppHandle, DragDropEvent, Emitter, Manager, WebviewWindow, WindowEvent};
 
 /// Height of the title bar (CSS --header-h): in a window the video starts below it.
 const HEADER_H: f64 = 36.0;
@@ -53,16 +58,30 @@ const OBSERVED: &[&str] = &[
 /// time-pos changes on every frame: send it at most this often (the last one is never lost).
 const TIME_POS_INTERVAL: Duration = Duration::from_millis(50);
 
-struct Player {
-    mpv: Arc<Mpv>,
+type Cache = Arc<Mutex<HashMap<String, Value>>>;
+
+pub(crate) struct Player {
+    pub mpv: Arc<Mpv>,
+    pub settings: Arc<Store>,
     /// The main window and the video window in it (HWNDs).
     parent: isize,
     host: isize,
     /// Latest value of each observed property (the UI reads it once at start).
-    cache: Arc<Mutex<HashMap<String, Value>>>,
-    /// Files from the command line, waiting for the UI to have applied its settings.
-    pending: Mutex<Vec<String>>,
+    cache: Cache,
     quitting: AtomicBool,
+}
+
+impl Player {
+    /// No file is open.
+    pub fn is_idle(&self) -> bool {
+        self.cache.lock().unwrap().get("idle-active").and_then(Value::as_bool).unwrap_or(true)
+    }
+
+    fn save_position(&self) {
+        if !self.is_idle() && self.settings.get().resume {
+            let _ = self.mpv.command(&["write-watch-later-config"]);
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -71,12 +90,8 @@ struct PropEvent<'a> {
     value: &'a Value,
 }
 
-#[derive(Clone, Serialize)]
-struct MpvEvent {
-    event: &'static str,
-    reason: Option<i32>,
-    error: Option<i32>,
-}
+/// mpv's MPV_END_FILE_REASON_ERROR.
+const END_FILE_ERROR: i32 = 4;
 
 fn exe_dir() -> PathBuf {
     std::env::current_exe()
@@ -141,13 +156,11 @@ fn video_input(app: AppHandle) -> Box<dyn Fn(host::Input) + Send + Sync> {
             let s = scale();
             let _ = app.emit("video-mouse", VideoMouse { kind, x: x as f64 / s, y: y as f64 / s, delta });
         }
-        host::Input::Drop(files) => {
-            let _ = app.emit("open-files", files);
-        }
+        host::Input::Drop(files) => media::open_paths(&app, files),
     })
 }
 
-fn start_mpv(app: &AppHandle, host: isize) -> Result<Mpv, String> {
+fn start_mpv(app: &AppHandle, host: isize, prefs: &settings::Settings) -> Result<Mpv, String> {
     let mpv = Mpv::load(&exe_dir().join("libmpv-2.dll"))?;
     let path = app.path();
     let watch_later = path.app_data_dir().map_err(|e| e.to_string())?.join("watch_later");
@@ -157,7 +170,7 @@ fn start_mpv(app: &AppHandle, host: isize) -> Result<Mpv, String> {
     let opts: &[(&str, String)] = &[
         ("wid", host.to_string()),
         ("vo", "gpu-next".into()),
-        ("hwdec", "auto-safe".into()),
+        ("volume", prefs.volume.round().to_string()),
         ("keep-open", "yes".into()),
         ("idle", "yes".into()),
         ("force-window", "yes".into()),
@@ -179,7 +192,7 @@ fn start_mpv(app: &AppHandle, host: isize) -> Result<Mpv, String> {
         ("directory-filter-types", "video,audio".into()),
         ("volume-max", "150".into()),
     ];
-    for (k, v) in opts {
+    for (k, v) in opts.iter().chain(prefs.mpv_values().iter()) {
         mpv.set_option(k, v)?;
     }
     mpv.initialize()?;
@@ -192,11 +205,14 @@ fn start_mpv(app: &AppHandle, host: isize) -> Result<Mpv, String> {
     Ok(mpv)
 }
 
-/// The mpv event loop (own thread): forwards property changes and file events to the UI.
-/// On shutdown (the `quit` sent when the window closes) destroys mpv, then ends the app.
-fn event_loop(app: AppHandle, mpv: Arc<Mpv>, cache: Arc<Mutex<HashMap<String, Value>>>, host: isize) {
+/// The mpv event loop (own thread): forwards property changes to the UI, sizes the window to
+/// each new video, reports files that do not open. On shutdown (the `quit` sent when the
+/// window closes) remembers the volume, destroys mpv, then ends the app.
+fn event_loop(app: AppHandle, mpv: Arc<Mpv>, cache: Cache, settings: Arc<Store>, host: isize) {
     #[cfg(windows)]
     host::disable_children(host);
+    // A file started: the window is fitted to its video once the video size is known.
+    let mut need_fit = false;
     let mut pending_time: Option<Value> = None;
     let mut last_time = Instant::now() - TIME_POS_INTERVAL;
     loop {
@@ -223,23 +239,34 @@ fn event_loop(app: AppHandle, mpv: Arc<Mpv>, cache: Arc<Mutex<HashMap<String, Va
                     let _ = app.emit("mpv-prop", PropEvent { name: &name, value: &value });
                 }
             }
-            mpv::EVENT_FILE_LOADED | mpv::EVENT_START_FILE | mpv::EVENT_VIDEO_RECONFIG => {
-                let event = match ev.event_id {
-                    mpv::EVENT_FILE_LOADED => "file-loaded",
-                    mpv::EVENT_START_FILE => "start-file",
-                    _ => "video-reconfig",
-                };
+            mpv::EVENT_START_FILE => need_fit = true,
+            mpv::EVENT_FILE_LOADED => {
+                if let Ok(Value::String(title)) = mpv.get_property("media-title") {
+                    media::osd(&app, title);
+                }
+            }
+            mpv::EVENT_VIDEO_RECONFIG => {
                 // mpv may (re)create its window: keep it out of the mouse's way.
                 #[cfg(windows)]
                 host::disable_children(host);
-                let _ = app.emit("mpv-event", MpvEvent { event, reason: None, error: None });
+                if need_fit {
+                    let dim = |name| mpv.get_property(name).ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let (w, h) = (dim("dwidth"), dim("dheight"));
+                    if w > 0.0 && h > 0.0 {
+                        need_fit = false;
+                        if settings.get().autofit {
+                            if let Some(window) = app.get_webview_window("main") {
+                                media::fit_window(&window, w, h, HEADER_H);
+                            }
+                        }
+                    }
+                }
             }
             mpv::EVENT_END_FILE => {
                 let e = unsafe { &*(ev.data as *const mpv::EventEndFile) };
-                let _ = app.emit(
-                    "mpv-event",
-                    MpvEvent { event: "end-file", reason: Some(e.reason), error: Some(e.error) },
-                );
+                if e.reason == END_FILE_ERROR {
+                    media::osd(&app, "Не вдалося відкрити файл");
+                }
             }
             mpv::EVENT_LOG_MESSAGE => {
                 let m = unsafe { &*(ev.data as *const mpv::EventLogMessage) };
@@ -252,6 +279,9 @@ fn event_loop(app: AppHandle, mpv: Arc<Mpv>, cache: Arc<Mutex<HashMap<String, Va
             last_time = Instant::now();
             let _ = app.emit("mpv-prop", PropEvent { name: "time-pos", value: &v });
         }
+    }
+    if let Some(volume) = cache.lock().unwrap().get("volume").and_then(Value::as_f64) {
+        settings.set_volume(volume);
     }
     mpv.destroy();
     app.exit(0);
@@ -287,8 +317,55 @@ fn mpv_snapshot(state: tauri::State<Player>) -> HashMap<String, Value> {
 }
 
 #[tauri::command]
-fn take_pending_files(state: tauri::State<Player>) -> Vec<String> {
-    std::mem::take(&mut *state.pending.lock().unwrap())
+fn settings_get(state: tauri::State<Player>) -> settings::Settings {
+    state.settings.get()
+}
+
+/// Changes some settings (camelCase fields); the mpv ones apply at once.
+#[tauri::command]
+fn settings_set(state: tauri::State<Player>, patch: Value) -> Result<settings::Settings, String> {
+    state.settings.patch(patch, Some(&state.mpv))
+}
+
+/// The accent colours for the current settings on a theme.
+#[tauri::command]
+fn look(state: tauri::State<Player>, dark: bool) -> accent::Look {
+    let s = state.settings.get();
+    accent::look(&s.accent, &s.custom_accent, dark)
+}
+
+#[tauri::command]
+fn media_formats() -> media::Formats {
+    media::formats()
+}
+
+#[tauri::command]
+fn open_dialog(app: AppHandle) {
+    media::open_dialog(&app);
+}
+
+#[tauri::command]
+fn subtitles_dialog(app: AppHandle) {
+    media::subtitles_dialog(&app);
+}
+
+#[tauri::command]
+fn open_paths(app: AppHandle, paths: Vec<String>) {
+    media::open_paths(&app, paths);
+}
+
+/// Stops playback (remembering the position when asked).
+#[tauri::command]
+fn player_stop(state: tauri::State<Player>) -> Result<(), String> {
+    state.save_position();
+    state.mpv.command(&["stop"])
+}
+
+/// The next / previous file of the playlist (remembering the position when asked).
+#[tauri::command]
+fn playlist_step(state: tauri::State<Player>, forward: bool) -> Result<(), String> {
+    state.save_position();
+    state.mpv.command(&[if forward { "playlist-next" } else { "playlist-prev" }])
 }
 
 #[derive(serde::Deserialize)]
@@ -328,8 +405,8 @@ fn assoc_status() -> assoc::Status {
 
 #[cfg(windows)]
 #[tauri::command]
-fn assoc_apply(selection: assoc::Selection) -> Result<assoc::Status, String> {
-    assoc::apply(&selection)
+fn assoc_apply(selected: Vec<String>) -> Result<assoc::Status, String> {
+    assoc::apply(&selected)
 }
 
 #[cfg(windows)]
@@ -361,9 +438,7 @@ pub fn run() {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
-            if !files.is_empty() {
-                let _ = app.emit("open-files", files);
-            }
+            media::open_paths(app, files);
         }))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -373,15 +448,15 @@ pub fn run() {
             #[cfg(windows)]
             {
                 let handle = app.handle().clone();
-                if let Err(e) = drop::register(host, Box::new(move |files| {
-                    let _ = handle.emit("open-files", files);
-                })) {
+                if let Err(e) = drop::register(host, Box::new(move |files| media::open_paths(&handle, files))) {
                     eprintln!("{e}");
                 }
             }
             layout(&window, host);
 
-            let mpv = match start_mpv(app.handle(), host) {
+            let config = app.path().app_config_dir().map_err(|e| e.to_string())?;
+            let settings = Arc::new(Store::load(config.join("settings.json")));
+            let mpv = match start_mpv(app.handle(), host, &settings.get()) {
                 Ok(m) => Arc::new(m),
                 Err(e) => {
                     #[cfg(windows)]
@@ -393,20 +468,17 @@ pub fn run() {
             };
             let cache = Arc::new(Mutex::new(HashMap::new()));
             {
-                let (app, mpv, cache) = (app.handle().clone(), mpv.clone(), cache.clone());
+                let (app, mpv, cache, settings) =
+                    (app.handle().clone(), mpv.clone(), cache.clone(), settings.clone());
                 std::thread::Builder::new()
                     .name("mpv-events".into())
-                    .spawn(move || event_loop(app, mpv, cache, host))?;
+                    .spawn(move || event_loop(app, mpv, cache, settings, host))?;
             }
+            app.manage(Player { mpv, settings, parent, host, cache, quitting: AtomicBool::new(false) });
+            // Files from the command line (Explorer: "Open with Videk"). mpv already has the
+            // settings, so the first file opens with them.
             let cwd = std::env::current_dir().unwrap_or_default();
-            app.manage(Player {
-                mpv,
-                parent,
-                host,
-                cache,
-                pending: Mutex::new(file_args(std::env::args().skip(1), &cwd)),
-                quitting: AtomicBool::new(false),
-            });
+            media::open_paths(app.handle(), file_args(std::env::args().skip(1), &cwd));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -416,6 +488,11 @@ pub fn run() {
                     if let Some(w) = window.app_handle().get_webview_window(window.label()) {
                         layout(&w, player.host);
                     }
+                }
+                // Files dropped on the UI parts (the video window has its own drop target).
+                WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {
+                    let paths = paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+                    media::open_paths(window.app_handle(), paths);
                 }
                 WindowEvent::CloseRequested { api, .. } => {
                     // mpv must be shut down (saving the position if asked) before the window
@@ -441,7 +518,15 @@ pub fn run() {
             mpv_set,
             mpv_get,
             mpv_snapshot,
-            take_pending_files,
+            settings_get,
+            settings_set,
+            look,
+            media_formats,
+            open_dialog,
+            subtitles_dialog,
+            open_paths,
+            player_stop,
+            playlist_step,
             set_fullscreen,
             set_ui_region,
             set_cursor_hidden,

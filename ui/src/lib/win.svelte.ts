@@ -1,10 +1,9 @@
-// The window: full screen, maximized, always on top, the title bar shown over the video in
-// full screen, and fitting the window to the video size.
+// The window: full screen, maximized, always on top, and the title bar shown over the video
+// in full screen. (Fitting the window to a new video is done in Rust: media.rs.)
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, currentMonitor, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const appWindow = getCurrentWindow();
-const HEADER_H = 36;
 
 class Win {
   fullscreen = $state(false);
@@ -60,37 +59,6 @@ class Win {
   }
   setTitle(t: string) {
     appWindow.setTitle(t).catch(() => {});
-  }
-
-  /** Sizes the window so the video shows at 1:1 (at most 80% of the screen), keeping the
-   *  window centre where it was. */
-  async fitTo(vw: number, vh: number) {
-    if (this.fullscreen || this.maximized || vw <= 0 || vh <= 0) return;
-    const mon = await currentMonitor();
-    if (!mon) return;
-    const area = mon.workArea ?? { position: mon.position, size: mon.size };
-    const scale = mon.scaleFactor;
-    const header = Math.round(HEADER_H * scale);
-    const maxW = area.size.width * 0.8;
-    const maxH = area.size.height * 0.8 - header;
-    const k = Math.min(1, maxW / vw, maxH / vh);
-    const minW = Math.round(420 * scale);
-    let w = Math.max(minW, Math.round(vw * k));
-    let h = Math.round((w / vw) * vh) + header;
-    h = Math.max(Math.round(240 * scale), h);
-    w = Math.min(w, area.size.width);
-    h = Math.min(h, area.size.height);
-
-    const pos = await appWindow.outerPosition();
-    const size = await appWindow.outerSize();
-    const cx = pos.x + size.width / 2;
-    const cy = pos.y + size.height / 2;
-    const ax = area.position.x;
-    const ay = area.position.y;
-    const x = Math.round(Math.min(Math.max(cx - w / 2, ax), ax + area.size.width - w));
-    const y = Math.round(Math.min(Math.max(cy - h / 2, ay), ay + area.size.height - h));
-    await appWindow.setSize(new PhysicalSize(w, h));
-    await appWindow.setPosition(new PhysicalPosition(x, y));
   }
 }
 
