@@ -22,9 +22,15 @@ try {
   Write-Host "libmpv: downloading $url"
   $archive = Join-Path $tmp $Asset
   Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
-  # Windows 10/11 tar.exe (bsdtar/libarchive) reads .7z.
-  tar -xf $archive -C $tmp
-  if ($LASTEXITCODE -ne 0) { throw "tar failed to extract $Asset" }
+  # 7-Zip when present (GitHub's Windows runners have it), else Windows 10/11 tar.exe
+  # (bsdtar/libarchive reads .7z).
+  if (Get-Command 7z -ErrorAction SilentlyContinue) {
+    7z x $archive "-o$tmp" -y | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "7z failed to extract $Asset" }
+  } else {
+    tar -xf $archive -C $tmp
+    if ($LASTEXITCODE -ne 0) { throw "tar failed to extract $Asset" }
+  }
   $found = Get-ChildItem -Path $tmp -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
   if (-not $found) { throw "libmpv-2.dll not found in $Asset" }
   Copy-Item $found.FullName $dll -Force

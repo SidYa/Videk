@@ -1,51 +1,5 @@
 # Videk
 
-Швидкий мінімалістичний відеоплеєр для Windows у дусі MPV.
-Rust + Tauri 2 + Svelte 5 + Vite, рушій **libmpv**: FFmpeg, апаратне декодування, рендер libplacebo.
-
-## Можливості
-
-- Формати: все, що читає FFmpeg. Відео: MKV, MP4, MOV, AVI, WEBM, FLV, MPEG/TS, WMV, **Bink (BIK/BK2)**, 3GP, OGV… Аудіо: MP3, FLAC, WAV, AAC/M4A, OGG/Opus, WMA, APE, WavPack, AC3/DTS…
-- Керування й смуга відтворення розміщені прямо в заголовку вікна.
-- **Подвійний клік ЛКМ**: повний екран. Заголовок ховається й виїжджає, коли курсор біля верхнього краю.
-- **Затиснута ЛКМ** у будь-якому місці відео: переміщення вікна.
-- **ПКМ**: меню (відкрити, субтитри, аудіодоріжки, швидкість, розділи, повтор, скріншот, поверх вікон, налаштування).
-- Налаштування: тема (системна / світла / темна), акцентний колір (як у Farba), апаратне декодування, запам'ятовування позиції, плейлист із файлів папки, розмір вікна під відео, пауза кліком.
-- Перетягування файлів у вікно (субтитри додаються до поточного відео), асоціації файлів, один екземпляр програми.
-
-## Клавіші
-
-| Клавіша | Дія |
-|---|---|
-| Пробіл / K | пауза |
-| ← / → | −5 / +5 с (Shift: 1 с, Alt: 60 с) |
-| ↑ / ↓, колесо | гучність |
-| F, F11, подвійний клік | повний екран; Esc — вийти |
-| M | без звуку |
-| [ ] / Backspace | швидкість −/+ 0.1 / скинути |
-| , / . | кадр назад / вперед |
-| PgUp / PgDn | попередній / наступний файл |
-| 0…9 | перехід на 0…90% |
-| A / J / V | наступна аудіодоріжка / субтитри / показ субтитрів |
-| L | повтор файлу |
-| S | скріншот (у «Зображення\Videk») |
-| T | поверх усіх вікон |
-| Ctrl+O / Ctrl+, | відкрити / налаштування |
-
-## Збірка
-
-Потрібні Rust, Node.js і pnpm. libmpv (`vendor/mpv/libmpv-2.dll`) завантажується автоматично (`scripts/fetch-libmpv.ps1`, збірка shinchiro/mpv-winbuild-cmake).
-
-```
-run.bat        меню
-run.bat 1      запуск без інсталятора (tauri dev)
-run.bat 2      інсталятор NSIS -> src-tauri\target\release\bundle\nsis\
-```
-
-## Як це влаштовано
-
-mpv малює у нативне дочірнє вікно (`src-tauri/src/host.rs`). Над ним лежить WebView2 з інтерфейсом. WebView обрізається регіоном вікна лише до видимих елементів (`data-ui`, `ui/src/lib/region.ts`), тому все інше займає відео. Миша над відео повертається в інтерфейс подіями `video-mouse`.
-
-## Ліцензія
-
-GPL-3.0. libmpv / FFmpeg у цій збірці розповсюджуються за GPL.
+A fast, minimal video player built with Rust, Tauri and Svelte on top of libmpv. It plays anything FFmpeg reads (MKV, MP4, MOV, AVI, WEBM, FLV, Bink, MP3, FLAC…).
+The controls live in the window's title bar, a double click goes full screen, and a right click opens the menu and settings.
+Run and build with `run.bat` (1: run, 2: NSIS installer).
