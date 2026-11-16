@@ -113,6 +113,9 @@ fn layout(window: &WebviewWindow, host: isize) {
     {
         host::place(host, 0, top, w, h - top);
         host::set_drag_enabled(!full);
+        if let Ok(parent) = window.hwnd() {
+            host::set_resize_borders(parent.0 as isize, !full);
+        }
     }
 }
 

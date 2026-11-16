@@ -6,17 +6,19 @@ rem   run.bat 2 / nsis  - build the NSIS installer (release)
 setlocal
 cd /d "%~dp0"
 
-set "CHOICE=%~1"
-if /i "%CHOICE%"=="dev" set "CHOICE=1"
-if /i "%CHOICE%"=="nsis" set "CHOICE=2"
-if not "%CHOICE%"=="" goto :check
+set "MODE=%~1"
+if /i "%MODE%"=="dev" set "MODE=1"
+if /i "%MODE%"=="nsis" set "MODE=2"
+if not "%MODE%"=="" goto :check
 
 echo.
 echo   Videk
 echo   1. Run (no installer)
 echo   2. Build NSIS installer
 echo.
-set /p "CHOICE=Choose 1 or 2: "
+rem One key press, no Enter.
+choice /c 12 /n /m "Press 1 or 2: "
+set "MODE=%errorlevel%"
 
 :check
 where pnpm >nul 2>nul
@@ -41,9 +43,9 @@ if not exist vendor\mpv\libmpv-2.dll (
   if errorlevel 1 goto :fail
 )
 
-if "%CHOICE%"=="1" goto :dev
-if "%CHOICE%"=="2" goto :nsis
-echo Unknown choice: %CHOICE%
+if "%MODE%"=="1" goto :dev
+if "%MODE%"=="2" goto :nsis
+echo Unknown choice: %MODE%
 goto :fail
 
 :dev

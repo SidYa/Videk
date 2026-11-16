@@ -138,7 +138,7 @@
   function videoMove(y: number) {
     pokeCursor();
     if (!win.fullscreen) return;
-    if (y <= 2) {
+    if (y <= 4) {
       clearTimeout(hideHeaderTimer);
       win.revealed = true;
     } else if (win.revealed && y > HEADER_H + 24) {

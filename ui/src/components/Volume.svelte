@@ -3,7 +3,7 @@
   import { player } from "../lib/player.svelte";
 
   let bar: HTMLDivElement;
-  let drag = false;
+  let drag = $state(false);
   const MAX = 100; // the slider goes to 100 %; the wheel / keys up to 150 %
 
   const icon = $derived(
@@ -27,6 +27,7 @@
   </button>
   <div
     class="bar"
+    class:active={drag}
     bind:this={bar}
     role="slider"
     tabindex="-1"
@@ -46,6 +47,7 @@
     onpointercancel={() => (drag = false)}
   >
     <div class="track"><div class="fill" style:width="{pct}%"></div></div>
+    <div class="thumb" style:left="{pct}%"></div>
   </div>
 </div>
 
@@ -57,19 +59,45 @@
     flex: none;
   }
   .bar {
+    position: relative;
     width: 72px;
     height: 100%;
     display: flex;
     align-items: center;
-    margin: 0 6px 0 2px;
+    margin: 0 8px 0 2px;
+    cursor: pointer;
     touch-action: none;
   }
+  /* Same behaviour as the seek bar: the track thickens and a marker appears on hover. */
   .track {
     width: 100%;
     height: 4px;
     border-radius: 2px;
     background: var(--track);
     overflow: hidden;
+    transition: height 0.12s;
+  }
+  .bar:hover .track,
+  .bar.active .track {
+    height: 6px;
+    border-radius: 3px;
+  }
+  .thumb {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg-header);
+    transform: scale(0);
+    transition: transform 0.12s;
+    pointer-events: none;
+  }
+  .bar:hover .thumb,
+  .bar.active .thumb {
+    transform: scale(1);
   }
   .fill {
     height: 100%;

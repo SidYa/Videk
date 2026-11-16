@@ -232,6 +232,21 @@ mod imp {
         String::from_utf16_lossy(&buf[..n.max(0) as usize])
     }
 
+    /// Shows / hides Tauri's resize-border window (TAURI_DRAG_RESIZE_BORDERS). In full screen
+    /// it would sit on the screen's edges and take the mouse at the very top, where the
+    /// title bar must slide in.
+    pub fn set_resize_borders(parent: isize, visible: bool) {
+        unsafe {
+            let mut child = GetWindow(parent as HWND, GW_CHILD);
+            while !child.is_null() {
+                if class_name(child) == "TAURI_DRAG_RESIZE_BORDERS" {
+                    ShowWindow(child, if visible { SW_SHOWNA } else { SW_HIDE });
+                }
+                child = GetWindow(child, GW_HWNDNEXT);
+            }
+        }
+    }
+
     /// Clips the WebView (the WRY_WEBVIEW child of the main window) to `rects`. Other
     /// children (the video host, Tauri's TAURI_DRAG_RESIZE_BORDERS) are left alone.
     pub fn set_region(parent: isize, host: isize, rects: &[Rect]) {
